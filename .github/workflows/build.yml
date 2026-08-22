@@ -26,23 +26,13 @@ jobs:
       - name: 接受 Android 许可证
         run: yes | sdkmanager --licenses
 
-      - name: 确保 Gradle Wrapper 版本为 7.5
-        run: |
-          if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-            mkdir -p gradle/wrapper
-          fi
-          # 强制写入正确的版本
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-bin.zip" > gradle/wrapper/gradle-wrapper.properties
-          # 如果 gradlew 不存在，生成它
-          if [ ! -f "gradlew" ]; then
-            sudo apt-get update
-            sudo apt-get install -y gradle
-            gradle wrapper --gradle-version 7.5
-          fi
-          chmod +x gradlew
+      - name: 设置 Gradle 7.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '7.5'
 
       - name: 构建 Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: gradle assembleDebug --stacktrace
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
