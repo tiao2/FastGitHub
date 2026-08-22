@@ -83,33 +83,14 @@ public class FastGitHubVpnService extends VpnService {
         try {
             Builder builder = new Builder();
             builder.addAddress(VPN_ADDRESS, VPN_PREFIX);
-            builder.addDnsServer(VPN_ADDRESS);
-
-            Map<String, String> currentMap = hostMap;
-            if (currentMap != null) {
-                int routeCount = 0;
-                for (String ip : currentMap.values()) {
-                    if (ip != null && !ip.isEmpty()) {
-                        try {
-                            String[] parts = ip.split("\\.");
-                            if (parts.length == 4) {
-                                builder.addRoute(ip, 32);
-                                routeCount++;
-                            }
-                        } catch (Exception e) {
-                            Log.w(TAG, "无效 IP 忽略: " + ip);
-                        }
-                    }
-                }
-                Log.i(TAG, "添加了 " + routeCount + " 条 /32 路由");
-            }
-
+            builder.addDnsServer(VPN_ADDRESS);   // 将 DNS 指向本地
+            // 重要：不添加任何路由，只劫持 DNS 查询，TCP 流量走物理网络
             builder.setMtu(1500);
             builder.setSession("Fast GitHub DNS");
             vpnInterface = builder.establish();
             running = true;
             new Thread(this::handleDnsTraffic).start();
-            Log.i(TAG, "VPN 启动成功");
+            Log.i(TAG, "VPN 启动成功（仅 DNS 模式）");
         } catch (Exception e) {
             Log.e(TAG, "VPN 启动失败", e);
             stopSelf();
@@ -158,6 +139,7 @@ public class FastGitHubVpnService extends VpnService {
                     DatagramPacket queryPacket = new DatagramPacket(buffer, dnsOffset, dnsLen);
                     response = DnsPacketHandler.buildAResponse(queryPacket, dnsLen, mappedIp);
                 } else {
+                    // 转发给上游 DNS（114.114.114.114）
                     DatagramPacket forwardPacket = new DatagramPacket(
                             buffer, dnsOffset, dnsLen,
                             InetSocketAddress.createUnresolved("114.114.114.114", 53)
@@ -174,24 +156,30 @@ public class FastGitHubVpnService extends VpnService {
                 }
 
                 if (response != null) {
+                    // 构造 IP + UDP 响应包，写回 TUN
                     int totalLen = headerLen + 8 + response.length;
                     byte[] outPacket = new byte[totalLen];
                     System.arraycopy(buffer, 0, outPacket, 0, headerLen);
 
+                    // 交换 IP 源和目标
                     for (int i = 0; i < 4; i++) {
                         byte tmp = outPacket[12 + i];
                         outPacket[12 + i] = outPacket[16 + i];
                         outPacket[16 + i] = tmp;
                     }
 
+                    // IP 总长度
                     outPacket[2] = (byte) ((totalLen >> 8) & 0xFF);
                     outPacket[3] = (byte) (totalLen & 0xFF);
+
+                    // IP 校验和
                     outPacket[10] = 0;
                     outPacket[11] = 0;
                     int ipChecksum = computeIpChecksum(outPacket, headerLen);
                     outPacket[10] = (byte) ((ipChecksum >> 8) & 0xFF);
                     outPacket[11] = (byte) (ipChecksum & 0xFF);
 
+                    // UDP 头（交换端口）
                     int udpOffset = headerLen;
                     outPacket[udpOffset] = (byte) ((dstPort >> 8) & 0xFF);
                     outPacket[udpOffset + 1] = (byte) (dstPort & 0xFF);
@@ -202,8 +190,10 @@ public class FastGitHubVpnService extends VpnService {
                     outPacket[udpOffset + 4] = (byte) ((udpLen >> 8) & 0xFF);
                     outPacket[udpOffset + 5] = (byte) (udpLen & 0xFF);
 
+                    // DNS 数据
                     System.arraycopy(response, 0, outPacket, udpOffset + 8, response.length);
 
+                    // UDP 校验和（含伪头部）
                     int udpChecksum = computeUdpChecksum(
                             outPacket, headerLen, udpOffset, udpLen,
                             outPacket[12], outPacket[13], outPacket[14], outPacket[15],
@@ -239,7 +229,7 @@ public class FastGitHubVpnService extends VpnService {
         sum += ((src3 & 0xFF) << 8) | (src4 & 0xFF);
         sum += ((dst1 & 0xFF) << 8) | (dst2 & 0xFF);
         sum += ((dst3 & 0xFF) << 8) | (dst4 & 0xFF);
-        sum += 17;
+        sum += 17; // UDP protocol
         sum += udpLen;
 
         int dataLen = udpLen;
