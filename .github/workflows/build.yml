@@ -5,7 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:   # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -23,23 +23,28 @@ jobs:
       - name: 设置 Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 接受 Android 许可证（必须）
+      - name: 接受 Android 许可证
         run: yes | sdkmanager --licenses
 
-      - name: 自动修复缺失的 gradlew（如果本地未提交）
+      - name: 确保 Gradle Wrapper 版本为 7.5
         run: |
+          if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+            mkdir -p gradle/wrapper
+          fi
+          # 强制写入正确的版本
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-bin.zip" > gradle/wrapper/gradle-wrapper.properties
+          # 如果 gradlew 不存在，生成它
           if [ ! -f "gradlew" ]; then
-            echo "⚠️ gradlew 不存在，正在自动生成..."
             sudo apt-get update
             sudo apt-get install -y gradle
-            gradle wrapper --gradle-version 7.4.2
+            gradle wrapper --gradle-version 7.5
           fi
           chmod +x gradlew
 
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
-      - name: 上传 APK 产物
+      - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: Fast-GitHub-Debug-APK
