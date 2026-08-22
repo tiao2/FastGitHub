@@ -1,195 +1,215 @@
 package com.tiao2.fastgithub;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
-import android.content.Intent;
+import android.app.*;
+import android.content.*;
 import android.net.VpnService;
-import android.os.Build;
-import android.os.ParcelFileDescriptor;
+import android.os.*;
 import android.util.Log;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.concurrent.*;
 public class FastGitHubVpnService extends VpnService {
-    private static final String TAG = "FastGitHubVPN";
-    private static final String VPN_ADDRESS = "10.0.0.1";
-    private static final int VPN_PREFIX = 32;
-    private static final String DNS_SERVER = "114.114.114.114";
-    private static final int DNS_PORT = 53;
-    private static final int BUFFER_SIZE = 4096;
-    private ParcelFileDescriptor vpnInterface;
-    private ExecutorService executor;
-    private Map<String, String> hostMap;
-    private volatile boolean running = false;
-    @Override
-    public void onCreate() {
+    private static final String TAG="FastGitHubVPN";
+    private static final String VPN_ADDR="10.0.0.1";
+    private static final int PREFIX=32, DNS_PORT=53, BUFSZ=4096;
+    private static final long UPDATE_INTERVAL=1;
+    private ParcelFileDescriptor tun;
+    private ScheduledExecutorService scheduler;
+    private volatile Map<String,String> hostMap;
+    private volatile boolean running=false;
+    @Override public void onCreate() {
         super.onCreate();
-        hostMap = HostsLoader.loadFromAssets(this);
+        hostMap=HostsLoader.loadFromAssets(this);
+        Log.i(TAG, "≥ı º hosts º”‘ÿÕÍ≥…£¨Ãıƒø ˝: "+hostMap.size());
+        scheduler=Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(this::updateHosts, 0, UPDATE_INTERVAL, TimeUnit.HOURS);
     }
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
         startForegroundService();
         startVpn();
         return START_STICKY;
     }
     private void startForegroundService() {
-        String channelId = "fastgithub_vpn_channel";
+        String ch="fastgithub_vpn_channel";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    channelId,
-                    "Fast GitHub VPN",
-                    NotificationManager.IMPORTANCE_LOW
-            );
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
+            NotificationChannel nc = new NotificationChannel(ch, "Fast GitHub VPN", NotificationManager.IMPORTANCE_LOW);
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.createNotificationChannel(nc);
         }
-        Intent intent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                this, 0, intent, PendingIntent.FLAG_IMMUTABLE
-        );
-        Notification notification = new Notification.Builder(this, channelId)
-                .setContentTitle("Fast GitHub ËøêË°å‰∏≠")
-                .setContentText("Â∑≤Âä´ÊåÅ GitHub Áõ∏ÂÖ≥ DNS Ëß£Êûê")
+        Intent i = new Intent(this, MainActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE);
+        Notification n = new Notification.Builder(this, ch)
+                .setContentTitle("Fast GitHub ‘À––÷–")
+                .setContentText("DNSΩŸ≥÷+¬∑”…”≈ªØ")
                 .setSmallIcon(android.R.drawable.ic_menu_share)
-                .setContentIntent(pendingIntent)
+                .setContentIntent(pi)
                 .build();
-        startForeground(1, notification);
+        startForeground(1, n);
     }
-    private void startVpn() {
+    private synchronized void startVpn() {
         try {
-            Builder builder = new Builder();
-            builder.addAddress(VPN_ADDRESS, VPN_PREFIX);
-            builder.addDnsServer(VPN_ADDRESS);
-            builder.addRoute("0.0.0.0", 0);
-            builder.setMtu(1500);
-            builder.setSession("Fast GitHub VPN");
-            vpnInterface = builder.establish();
-            running = true;
-            executor = Executors.newSingleThreadExecutor();
-            executor.submit(this::handleTraffic);
-            Log.i(TAG, "VPN ÂêØÂä®ÊàêÂäü");
-        } catch (Exception e) {
-            Log.e(TAG, "VPN ÂêØÂä®Â§±Ë¥•", e);
-            stopSelf();
-        }
-    }
-    private void handleTraffic() {
-        try {
-            FileInputStream in = new FileInputStream(vpnInterface.getFileDescriptor());
-            FileOutputStream out = new FileOutputStream(vpnInterface.getFileDescriptor());
-            byte[] buffer = new byte[BUFFER_SIZE];
-            DatagramSocket upstreamSocket = new DatagramSocket();
-            protect(upstreamSocket);
-            while (running) {
-                int length = in.read(buffer);
-                if (length <= 0) continue;
-                if (length < 20) continue;
-                int version = (buffer[0] >> 4) & 0x0F;
-                if (version != 4) continue;
-                int headerLen = (buffer[0] & 0x0F) * 4;
-                if (length < headerLen + 8) continue;
-                int protocol = buffer[9] & 0xFF;
-                if (protocol != 17) continue;
-                int srcPort = ((buffer[headerLen] & 0xFF) << 8) | (buffer[headerLen + 1] & 0xFF);
-                int dstPort = ((buffer[headerLen + 2] & 0xFF) << 8) | (buffer[headerLen + 3] & 0xFF);
-                if (dstPort != DNS_PORT) {
-                    out.write(buffer, 0, length);
-                    continue;
-                }
-                int dnsOffset = headerLen + 8;
-                int dnsLen = length - dnsOffset;
-                String domain = DnsPacketHandler.extractDomain(buffer, dnsOffset);
-                String mappedIp = null;
-                if (domain != null) {
-                    String cleanDomain = domain.endsWith(".") ?
-                            domain.substring(0, domain.length() - 1) : domain;
-                    mappedIp = hostMap.get(cleanDomain);
-                    Log.d(TAG, "DNS Êü•ËØ¢: " + cleanDomain + " -> " + (mappedIp != null ? mappedIp : "ËΩ¨Âèë‰∏äÊ∏∏"));
-                }
-                byte[] response;
-                if (mappedIp != null) {
-                    DatagramPacket queryPacket = new DatagramPacket(buffer, dnsOffset, dnsLen);
-                    response = DnsPacketHandler.buildAResponse(queryPacket, dnsLen, mappedIp);
-                } else {
-                    DatagramPacket forwardPacket = new DatagramPacket(
-                            buffer, dnsOffset, dnsLen,
-                            InetSocketAddress.createUnresolved(DNS_SERVER, DNS_PORT)
-                    );
-                    upstreamSocket.send(forwardPacket);
-                    byte[] respBuf = new byte[BUFFER_SIZE];
-                    DatagramPacket recvPacket = new DatagramPacket(respBuf, respBuf.length);
-                    upstreamSocket.receive(recvPacket);
-                    response = new byte[recvPacket.getLength()];
-                    System.arraycopy(recvPacket.getData(), 0, response, 0, recvPacket.getLength());
-                }
-                if (response != null) {
-                    int totalLen = headerLen + 8 + response.length;
-                    byte[] outPacket = new byte[totalLen];
-                    System.arraycopy(buffer, 0, outPacket, 0, headerLen);
-                    outPacket[2] = (byte) ((totalLen >> 8) & 0xFF);
-                    outPacket[3] = (byte) (totalLen & 0xFF);
-                    for (int i = 0; i < 4; i++) {
-                        byte tmp = outPacket[12 + i];
-                        outPacket[12 + i] = outPacket[16 + i];
-                        outPacket[16 + i] = tmp;
+            Builder b = new Builder();
+            b.addAddress(VPN_ADDR, PREFIX);
+            b.addDnsServer(VPN_ADDR);
+            Map<String,String> cur=hostMap;
+            if (cur != null) {
+                int count=0;
+                for (String ip : cur.values()) {
+                    if (ip != null && !ip.isEmpty()) {
+                        try {
+                            String[] parts = ip.split("\\.");
+                            if (parts.length == 4) { b.addRoute(ip, 32); count++; }
+                        } catch (Exception e) {}
                     }
-                    outPacket[10] = 0;
-                    outPacket[11] = 0;
-                    int sum = 0;
-                    for (int i = 0; i < headerLen; i += 2) {
-                        sum += ((outPacket[i] & 0xFF) << 8) | (outPacket[i + 1] & 0xFF);
-                    }
-                    while ((sum >> 16) != 0) sum = (sum & 0xFFFF) + (sum >> 16);
-                    outPacket[10] = (byte) (~sum >> 8);
-                    outPacket[11] = (byte) (~sum & 0xFF);
-                    int udpOffset = headerLen;
-                    outPacket[udpOffset] = (byte) ((dstPort >> 8) & 0xFF);
-                    outPacket[udpOffset + 1] = (byte) (dstPort & 0xFF);
-                    outPacket[udpOffset + 2] = (byte) ((srcPort >> 8) & 0xFF);
-                    outPacket[udpOffset + 3] = (byte) (srcPort & 0xFF);
-                    int udpLen = 8 + response.length;
-                    outPacket[udpOffset + 4] = (byte) ((udpLen >> 8) & 0xFF);
-                    outPacket[udpOffset + 5] = (byte) (udpLen & 0xFF);
-                    outPacket[udpOffset + 6] = 0;
-                    outPacket[udpOffset + 7] = 0;
-                    System.arraycopy(response, 0, outPacket, udpOffset + 8, response.length);
-                    outPacket[udpOffset + 6] = 0;
-                    outPacket[udpOffset + 7] = 0;
-                    out.write(outPacket);
                 }
+                Log.i(TAG, "ÃÌº” "+count+" Ãı /32 ¬∑”…");
             }
-        } catch (Exception e) {
-            Log.e(TAG, "ÊµÅÈáèÂ§ÑÁêÜÂºÇÂ∏∏", e);
+            b.setMtu(1500);
+            b.setSession("Fast GitHub VPN");
+            tun = b.establish();
+            running = true;
+            new Thread(this::handleDns).start();
+            Log.i(TAG, "VPN ∆Ù∂Ø≥…π¶");
+        } catch (Exception e) { Log.e(TAG, "VPN ∆Ù∂Ø ß∞‹", e); stopSelf(); }
+    }
+    private void handleDns() {
+        try {
+            FileInputStream in = new FileInputStream(tun.getFileDescriptor());
+            FileOutputStream out = new FileOutputStream(tun.getFileDescriptor());
+            byte[] buf = new byte[BUFSZ];
+            while (running) {
+                int len = in.read(buf);
+                if (len < 28) continue;
+                int ver = (buf[0] >> 4) & 0x0F;
+                if (ver != 4) continue;
+                int hlen = (buf[0] & 0x0F) * 4;
+                if (len < hlen + 8) continue;
+                if ((buf[9] & 0xFF) != 17) continue;
+                int srcPort = ((buf[hlen] & 0xFF)<<8) | (buf[hlen+1] & 0xFF);
+                int dstPort = ((buf[hlen+2] & 0xFF)<<8) | (buf[hlen+3] & 0xFF);
+                if (dstPort != DNS_PORT) continue;
+                int dnsOff = hlen + 8;
+                int dnsLen = len - dnsOff;
+                String domain = DnsPacketHandler.extractDomain(buf, dnsOff);
+                String mapped = null;
+                if (domain != null) {
+                    String clean = domain.endsWith(".") ? domain.substring(0, domain.length()-1) : domain;
+                    mapped = hostMap.get(clean);
+                    Log.d(TAG, "DNS: "+clean+" -> "+(mapped!=null?mapped:"Œ¥√¸÷–"));
+                }
+                byte[] resp;
+                if (mapped != null) {
+                    DatagramPacket qp = new DatagramPacket(buf, dnsOff, dnsLen);
+                    resp = DnsPacketHandler.buildAResponse(qp, dnsLen, mapped);
+                } else {
+                    DatagramPacket fwd = new DatagramPacket(buf, dnsOff, dnsLen, InetSocketAddress.createUnresolved("114.114.114.114", 53));
+                    DatagramSocket sock = new DatagramSocket();
+                    protect(sock);
+                    sock.send(fwd);
+                    byte[] rbuf = new byte[BUFSZ];
+                    DatagramPacket recv = new DatagramPacket(rbuf, rbuf.length);
+                    sock.receive(recv);
+                    resp = new byte[recv.getLength()];
+                    System.arraycopy(recv.getData(), 0, resp, 0, recv.getLength());
+                    sock.close();
+                }
+                if (resp == null) continue;
+                int total = hlen + 8 + resp.length;
+                byte[] outPkt = new byte[total];
+                System.arraycopy(buf, 0, outPkt, 0, hlen);
+                for (int i=0;i<4;i++) { byte tmp=outPkt[12+i]; outPkt[12+i]=outPkt[16+i]; outPkt[16+i]=tmp; }
+                outPkt[2] = (byte)((total>>8)&0xFF); outPkt[3] = (byte)(total&0xFF);
+                outPkt[10]=0; outPkt[11]=0;
+                int ipcs = ipChecksum(outPkt, hlen);
+                outPkt[10] = (byte)((ipcs>>8)&0xFF); outPkt[11] = (byte)(ipcs&0xFF);
+                int udpOff = hlen;
+                outPkt[udpOff] = (byte)((dstPort>>8)&0xFF); outPkt[udpOff+1] = (byte)(dstPort&0xFF);
+                outPkt[udpOff+2] = (byte)((srcPort>>8)&0xFF); outPkt[udpOff+3] = (byte)(srcPort&0xFF);
+                int udpLen = 8 + resp.length;
+                outPkt[udpOff+4] = (byte)((udpLen>>8)&0xFF); outPkt[udpOff+5] = (byte)(udpLen&0xFF);
+                System.arraycopy(resp, 0, outPkt, udpOff+8, resp.length);
+                int udpcs = udpChecksum(outPkt, hlen, udpOff, udpLen,
+                        outPkt[12], outPkt[13], outPkt[14], outPkt[15],
+                        outPkt[16], outPkt[17], outPkt[18], outPkt[19]);
+                outPkt[udpOff+6] = (byte)((udpcs>>8)&0xFF); outPkt[udpOff+7] = (byte)(udpcs&0xFF);
+                out.write(outPkt);
+            }
+        } catch (Exception e) { Log.e(TAG, "DNS“Ï≥£", e); }
+    }
+    private int ipChecksum(byte[] pkt, int hlen) {
+        int sum=0;
+        for (int i=0;i<hlen;i+=2) sum += ((pkt[i]&0xFF)<<8) | (pkt[i+1]&0xFF);
+        while ((sum>>16)!=0) sum = (sum&0xFFFF) + (sum>>16);
+        return ~sum & 0xFFFF;
+    }
+    private int udpChecksum(byte[] pkt, int ipHlen, int udpOff, int udpLen,
+                            byte s1,byte s2,byte s3,byte s4,
+                            byte d1,byte d2,byte d3,byte d4) {
+        int sum=0;
+        sum += ((s1&0xFF)<<8)|(s2&0xFF); sum += ((s3&0xFF)<<8)|(s4&0xFF);
+        sum += ((d1&0xFF)<<8)|(d2&0xFF); sum += ((d3&0xFF)<<8)|(d4&0xFF);
+        sum += 17; sum += udpLen;
+        int dlen=udpLen, off=udpOff;
+        while (dlen>1) { sum += ((pkt[off]&0xFF)<<8)|(pkt[off+1]&0xFF); off+=2; dlen-=2; }
+        if (dlen==1) sum += (pkt[off]&0xFF)<<8;
+        while ((sum>>16)!=0) sum = (sum&0xFFFF) + (sum>>16);
+        int res = ~sum & 0xFFFF;
+        return res==0 ? 0xFFFF : res;
+    }
+    private void updateHosts() {
+        Log.i(TAG, "ø™ º∏¸–¬ hosts...");
+        Map<String,String> newMap = null;
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL("https://raw.hellogithub.com/hosts").openConnection();
+            conn.setConnectTimeout(8000); conn.setReadTimeout(8000);
+            conn.connect();
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                String text = readAll(conn);
+                newMap = parseHosts(text);
+            }
+            conn.disconnect();
+        } catch (Exception e) { Log.w(TAG, "÷±¡¨ ß∞‹£¨≥¢ ‘¥˙¿Ì..."); }
+        if (newMap == null || newMap.isEmpty()) newMap = ChallengeSolver.fetchViaProxy();
+        if (newMap == null || newMap.isEmpty()) { Log.w(TAG, "À˘”–∏¸–¬ ß∞‹"); return; }
+        if (!newMap.equals(hostMap)) {
+            hostMap = newMap;
+            Log.i(TAG, "hosts ∏¸–¬£¨Ãıƒø: "+newMap.size());
+            if (tun != null && running) restartVpn();
+        } else Log.i(TAG, "Œﬁ±‰ªØ");
+    }
+    private synchronized void restartVpn() {
+        Log.i(TAG, "÷ÿ∆Ù VPN ”¶”√–¬¬∑”…...");
+        running = false;
+        if (tun != null) { try { tun.close(); } catch (Exception ignored) {} tun = null; }
+        startVpn();
+    }
+    private String readAll(HttpURLConnection conn) {
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+            StringBuilder sb = new StringBuilder(); String line;
+            while ((line = r.readLine()) != null) sb.append(line).append("\n");
+            return sb.toString();
+        } catch (Exception e) { return ""; }
+    }
+    private Map<String,String> parseHosts(String text) {
+        Map<String,String> map = new HashMap<>();
+        for (String line : text.split("\n")) {
+            line=line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            String[] p=line.split("\\s+");
+            if (p.length>=2) {
+                String ip=p[0];
+                for (int i=1;i<p.length;i++) map.put(p[i], ip);
+            }
         }
+        return map;
     }
-    @Override
-    public void onRevoke() {
-        stopVpn();
-    }
+    @Override public void onRevoke() { stopVpn(); }
     private void stopVpn() {
         running = false;
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-        if (vpnInterface != null) {
-            try {
-                vpnInterface.close();
-            } catch (Exception ignored) {}
-        }
+        if (scheduler != null) scheduler.shutdownNow();
+        if (tun != null) { try { tun.close(); } catch (Exception ignored) {} }
         stopForeground(true);
         stopSelf();
     }
-    @Override
-    public void onDestroy() {
-        stopVpn();
-        super.onDestroy();
-    }
+    @Override public void onDestroy() { stopVpn(); super.onDestroy(); }
 }

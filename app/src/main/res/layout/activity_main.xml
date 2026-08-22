@@ -1,49 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="24dp" android:gravity="center"
     android:background="#FFFFFF">
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="ðŸš€ Fast GitHub"
-        android:textSize="32sp"
-        android:textStyle="bold"
-        android:textColor="#FF5722"
-        android:layout_marginBottom="16dp"/>
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="å¼€å¯åŽï¼Œæœ¬æœºæ‰€æœ‰ App è®¿é—® GitHub ç³»åˆ—åŸŸåå°†ä½¿ç”¨æœ¬åœ°ä¼˜åŒ– IP è§£æžï¼Œæå‡è®¿é—®é€Ÿåº¦å¹¶é¿å… DNS æ±¡æŸ“ã€‚"
-        android:textSize="14sp"
-        android:textColor="#666666"
-        android:gravity="center"
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="•0‹4 Fast GitHub" android:textSize="32sp" android:textStyle="bold"
+        android:textColor="#FF5722" android:layout_marginBottom="16dp"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="¿ªÆôºó£¬±¾»úËùÓÐ App ·ÃÎÊ GitHub ÏµÁÐÓòÃû½«Ê¹ÓÃ±¾µØÓÅ»¯ IP ½âÎö£¬ÌáÉý·ÃÎÊËÙ¶È²¢±ÜÃâ DNS ÎÛÈ¾¡£"
+        android:textSize="14sp" android:textColor="#666666" android:gravity="center"
         android:layout_marginBottom="32dp"/>
-    <TextView
-        android:id="@+id/txtStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="â—‹ æœªå¼€å¯"
-        android:textSize="18sp"
-        android:textColor="#999999"
-        android:layout_marginBottom="24dp"/>
-    <Button
-        android:id="@+id/btnToggle"
-        android:layout_width="200dp"
-        android:layout_height="56dp"
-        android:text="å¼€å¯ VPN"
-        android:textSize="18sp"
-        android:backgroundTint="#FF5722"
+    <TextView android:id="@+id/txtStatus" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:text="¡ð Î´¿ªÆô" android:textSize="18sp"
+        android:textColor="#999999" android:layout_marginBottom="24dp"/>
+    <Button android:id="@+id/btnToggle" android:layout_width="200dp" android:layout_height="56dp"
+        android:text="¿ªÆô VPN" android:textSize="18sp" android:backgroundTint="#FF5722"
         android:textColor="#FFFFFF"/>
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Hosts æ•°æ®æ¥æº: GitHub520"
-        android:textSize="12sp"
-        android:textColor="#AAAAAA"
-        android:gravity="center"
-        android:layout_marginTop="40dp"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Hosts Êý¾ÝÀ´Ô´: GitHub520" android:textSize="12sp"
+        android:textColor="#AAAAAA" android:gravity="center" android:layout_marginTop="40dp"/>
 </LinearLayout>

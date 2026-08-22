@@ -8,50 +8,36 @@ import android.widget.Button;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 public class MainActivity extends AppCompatActivity {
-    private static final int VPN_REQUEST_CODE = 1000;
-    private Button btnToggle;
-    private TextView txtStatus;
-    private boolean isRunning = false;
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    private static final int REQ=1000;
+    private Button btn;
+    private TextView status;
+    private boolean running=false;
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        btnToggle = findViewById(R.id.btnToggle);
-        txtStatus = findViewById(R.id.txtStatus);
-        btnToggle.setOnClickListener(v -> {
-            if (isRunning) {
-                stopVpnService();
-            } else {
-                Intent intent = VpnService.prepare(this);
-                if (intent != null) {
-                    startActivityForResult(intent, VPN_REQUEST_CODE);
-                } else {
-                    startVpnService();
-                }
-            }
+        btn = findViewById(R.id.btnToggle);
+        status = findViewById(R.id.txtStatus);
+        btn.setOnClickListener(v -> {
+            if (running) stopVpn();
+            else { Intent i = VpnService.prepare(this); if (i != null) startActivityForResult(i, REQ); else startVpn(); }
         });
     }
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == VPN_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            startVpnService();
-        }
+    @Override protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ && res == Activity.RESULT_OK) startVpn();
     }
-    private void startVpnService() {
-        Intent intent = new Intent(this, FastGitHubVpnService.class);
-        startService(intent);
-        isRunning = true;
-        btnToggle.setText("ÂÖ≥Èó≠ VPN");
-        txtStatus.setText("‚óè Â∑≤ÂºÄÂêØ");
-        txtStatus.setTextColor(0xFF4CAF50);
+    private void startVpn() {
+        startService(new Intent(this, FastGitHubVpnService.class));
+        running = true;
+        btn.setText("πÿ±’ VPN");
+        status.setText("°Ò “—ø™∆Ù");
+        status.setTextColor(0xFF4CAF50);
     }
-    private void stopVpnService() {
-        Intent intent = new Intent(this, FastGitHubVpnService.class);
-        stopService(intent);
-        isRunning = false;
-        btnToggle.setText("ÂºÄÂêØ VPN");
-        txtStatus.setText("‚óã Êú™ÂºÄÂêØ");
-        txtStatus.setTextColor(0xFF999999);
+    private void stopVpn() {
+        stopService(new Intent(this, FastGitHubVpnService.class));
+        running = false;
+        btn.setText("ø™∆Ù VPN");
+        status.setText("° Œ¥ø™∆Ù");
+        status.setTextColor(0xFF999999);
     }
 }
