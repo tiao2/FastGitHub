@@ -11,7 +11,9 @@ public class DnsPacketHandler {
             if (question != null) {
                 return question.getName().toString();
             }
-        } catch (IOException e) {}
+        } catch (IOException e) {
+            // ignore
+        }
         return null;
     }
     public static byte[] buildAResponse(DatagramPacket queryPacket, int queryLen, String ip) {
